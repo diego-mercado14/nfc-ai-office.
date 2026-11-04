@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0b101b">
+  <meta name="description" content="Centro local de operaciones para un negocio de tarjetas NFC.">
+  <title>NFC Office · Centro de operaciones</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script defer src="/app.js"></script>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar" aria-label="Navegación principal">
+      <div class="brand"><span class="brand-icon">N<span class="brand-pulse"></span></span><div><strong>NFC OFFICE</strong><small>OPERATIONS PLATFORM</small></div></div>
+      <div class="workspace"><div class="workspace-symbol">◈</div><div><strong>Negocio NFC</strong><small>Espacio de trabajo</small></div><span class="workspace-down">⌄</span></div>
+      <p class="nav-label">ESPACIO DE TRABAJO</p>
+      <nav class="navigation" id="nav">
+        <button class="nav-btn active" data-page="dashboard" type="button"><span class="nav-icon">▦</span> Visión general</button>
+        <button class="nav-btn" data-page="prospects" type="button"><span class="nav-icon">◎</span> Prospectos</button>
+        <button class="nav-btn" data-page="quotes" type="button"><span class="nav-icon">▤</span> Cotizaciones</button>
+        <p class="nav-label nav-divider">AUTOMATIZACIÓN</p>
+        <button class="nav-btn" data-page="agents" type="button"><span class="nav-icon">✳</span> Agentes IA <span class="nav-chip">3</span></button>
+        <button class="nav-btn" data-page="settings" type="button"><span class="nav-icon">⚙</span> Sistema</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="local-card"><span class="status-light"></span><div><strong>Modo local</strong><small>Datos en tu equipo</small></div></div>
+        <div class="profile"><span class="profile-avatar">2</span><div><strong>Espacio del equipo</strong><small>Versión inicial · v0.1</small></div><span class="profile-more">···</span></div>
+      </div>
+    </aside>
+    <main class="main-content">
+      <header class="topbar">
+        <div class="breadcrumb"><span>NFC OFFICE</span><span class="breadcrumb-sep">/</span><strong id="breadcrumb-current">Visión general</strong></div>
+        <div class="top-actions"><span class="private-tag">● ENTORNO PRIVADO LOCAL</span><button id="refresh" class="icon-button" type="button" title="Actualizar datos" aria-label="Actualizar datos">↻</button><button class="button button-primary top-new" type="button" data-open="prospectDialog">+ Nuevo prospecto</button></div>
+      </header>
+      <div class="content">
+        <section class="page active" id="page-dashboard">
+          <div class="page-heading"><div><p class="eyebrow">CENTRO DE OPERACIONES</p><h1>Visión general<span class="dot">.</span></h1><p class="subheading">Tu negocio, tus oportunidades y tus agentes. Todo en un lugar.</p></div><div class="date-badge" id="today"></div></div>
+          <div class="metrics">
+            <article class="metric"><span class="metric-caption">PROSPECTOS TOTALES</span><div class="metric-number" id="m-prospects">—</div><span class="metric-bottom">Registro de oportunidades</span><span class="metric-icon">◎</span></article>
+            <article class="metric"><span class="metric-caption">OPORTUNIDADES ACTIVAS</span><div class="metric-number" id="m-active">—</div><span class="metric-bottom">En seguimiento</span><span class="metric-icon">↗</span></article>
+            <article class="metric"><span class="metric-caption">COTIZACIONES PENDIENTES</span><div class="metric-number" id="m-pending">—</div><span class="metric-bottom">Por aprobar o responder</span><span class="metric-icon">▤</span></article>
+            <article class="metric accented"><span class="metric-caption">UTILIDAD ESTIMADA</span><div class="metric-number" id="m-profit">—</div><span class="metric-bottom">Solo ventas aceptadas · MXN</span><span class="metric-icon">◈</span></article>
+          </div>
+          <div class="dashboard-grid">
+            <section class="panel">
+              <div class="panel-title"><div><p class="eyebrow">PIPELINE</p><h2>Estado de las oportunidades</h2></div><button class="text-button" data-page="prospects" type="button">Ver prospectos ↗</button></div>
+              <div id="pipeline" class="pipeline"></div>
+              <div class="panel-footnote">Una oportunidad cambia de etapa cuando tú la actualizas.</div>
+            </section>
+            <section class="panel panel-agents">
+              <div class="panel-title"><div><p class="eyebrow">AI WORKFORCE</p><h2>Agentes disponibles</h2></div><span class="small-pill">3 módulos</span></div>
+              <div class="agent-mini"><span class="agent-symbol purple">✳</span><div><strong>Coordinador</strong><small>Resumen y prioridades</small></div><span class="agent-tag">REGLAS</span></div>
+              <div class="agent-mini"><span class="agent-symbol blue">◎</span><div><strong>Prospección</strong><small>Calidad de datos de clientes</small></div><span class="agent-tag">REGLAS</span></div>
+              <div class="agent-mini"><span class="agent-symbol teal">✉</span><div><strong>Ventas</strong><small>Borrador de contacto</small></div><span class="agent-tag">IA / PLANTILLA</span></div>
+              <button class="button button-muted full" type="button" data-page="agents">Abrir centro de agentes <span>↗</span></button>
+            </section>
+            <section class="panel">
+              <div class="panel-title"><div><p class="eyebrow">ACTIVIDAD RECIENTE</p><h2>Últimas ejecuciones</h2></div></div>
+              <div id="latest-runs" class="run-list"></div>
+            </section>
+            <section class="panel feature-panel">
+              <div class="feature-decoration">✳</div><p class="eyebrow">COMIENZA AQUÍ</p><h2>Convierte contactos en oportunidades reales.</h2><p>Registra negocios, prepara una propuesta y deja que tus agentes te ayuden con el siguiente paso. Nada se envía automáticamente.</p><button class="button button-primary" type="button" data-open="prospectDialog">Agregar un prospecto ↗</button>
+            </section>
+          </div>
+          <p class="disclaimer">Las métricas de utilidad excluyen otros gastos, impuestos y comisiones. No equivalen a utilidad contable final.</p>
+        </section>
+
+        <section class="page" id="page-prospects">
+          <div class="page-heading"><div><p class="eyebrow">GESTIÓN COMERCIAL</p><h1>Prospectos<span class="dot">.</span></h1><p class="subheading">Organiza negocios potenciales y actualiza sus etapas.</p></div><button class="button button-primary" type="button" data-open="prospectDialog">+ Agregar negocio</button></div>
+          <div class="panel"><div class="table-head"><h2>Base de prospectos</h2><span class="small-pill" id="prospect-count">0 registros</span></div><div class="table-wrap"><table><thead><tr><th>NEGOCIO</th><th>CONTACTO</th><th>ETAPA</th><th>PRIORIDAD OPERATIVA</th><th>FECHA</th></tr></thead><tbody id="prospect-rows"></tbody></table></div><div class="table-hint">La prioridad es una regla orientativa basada en información registrada, no una predicción de venta.</div></div>
+        </section>
+
+        <section class="page" id="page-quotes">
+          <div class="page-heading"><div><p class="eyebrow">OPERACIONES</p><h1>Cotizaciones<span class="dot">.</span></h1><p class="subheading">Lleva control de tus propuestas, montos y costos.</p></div><button class="button button-primary" type="button" data-open="quoteDialog">+ Nueva cotización</button></div>
+          <div class="panel"><div class="table-head"><h2>Historial de cotizaciones</h2><span class="small-pill" id="quote-count">0 registros</span></div><div class="table-wrap"><table><thead><tr><th>NEGOCIO</th><th>CANTIDAD</th><th>TOTAL</th><th>COSTO UNITARIO</th><th>ESTADO</th><th>FECHA</th></tr></thead><tbody id="quote-rows"></tbody></table></div><div class="table-hint">El total y los costos los ingresas tú. Solo las cotizaciones aceptadas suman al indicador de ventas.</div></div>
+        </section>
+
+        <section class="page" id="page-agents">
+          <div class="page-heading"><div><p class="eyebrow">AI WORKFORCE</p><h1>Centro de agentes<span class="dot">.</span></h1><p class="subheading">Automatización útil, con control y aprobación humana.</p></div><span class="small-pill"><span class="status-light"></span> 3 agentes configurados</span></div>
+          <div class="agent-grid">
+            <article class="agent-card"><div class="agent-top"><span class="agent-symbol purple big">✳</span><span class="small-pill">REGLAS</span></div><h2>Coordinador</h2><p>Resume el pipeline, las cotizaciones y los siguientes negocios por atender.</p><button class="button button-muted full run-agent" data-agent="coordinador" type="button">Ejecutar análisis →</button></article>
+            <article class="agent-card"><div class="agent-top"><span class="agent-symbol blue big">◎</span><span class="small-pill">REGLAS</span></div><h2>Prospección</h2><p>Revisa un negocio registrado e identifica qué información necesitas completar.</p><select class="field agent-select" id="prospection-select" aria-label="Negocio para prospección"></select><button class="button button-muted full run-agent" data-agent="prospeccion" type="button">Analizar prospecto →</button></article>
+            <article class="agent-card"><div class="agent-top"><span class="agent-symbol teal big">✉</span><span class="small-pill">OLLAMA / PLANTILLA</span></div><h2>Ventas</h2><p>Genera un mensaje de contacto para revisar. Nunca lo envía por sí mismo.</p><select class="field agent-select" id="sales-select" aria-label="Negocio para ventas"></select><button class="button button-muted full run-agent" data-agent="ventas" type="button">Redactar mensaje →</button></article>
+          </div>
+          <section class="panel output-panel"><div class="panel-title"><div><p class="eyebrow">RESULTADO</p><h2>Salida del agente</h2></div><button class="text-button" id="copy-output" type="button" disabled>Copiar texto ↗</button></div><div class="output-meta" id="output-meta">Sin ejecuciones en esta sesión.</div><pre class="agent-output" id="agent-output">Selecciona un agente y presiona ejecutar. Sus resultados aparecerán aquí.</pre><p class="table-hint">Estos módulos no investigan automáticamente en Internet ni escriben a clientes. El modelo local es opcional.</p></section>
+        </section>
+
+        <section class="page" id="page-settings">
+          <div class="page-heading"><div><p class="eyebrow">CONFIGURACIÓN</p><h1>Sistema<span class="dot">.</span></h1><p class="subheading">Información técnica de tu instalación local.</p></div></div>
+          <div class="settings-grid">
+            <div class="panel"><div class="panel-title"><h2>Motor de IA</h2></div><p class="settings-copy">Ollama es opcional. Sin Ollama, el agente de ventas utiliza una plantilla editable. Los demás funcionan con reglas locales.</p><div class="setting-row"><span>Estado de Ollama</span><strong id="ollama-status">Comprobando…</strong></div><div class="setting-row"><span>Modelo configurado</span><strong id="ollama-model">—</strong></div></div>
+            <div class="panel"><div class="panel-title"><h2>Datos y seguridad</h2></div><p class="settings-copy">La base SQLite se guarda en la computadora que ejecuta este servidor, en <code>data/office.db</code>. El puerto se abre solo en <code>127.0.0.1</code>.</p><div class="notice"><strong>Importante</strong><p>Esta versión no tiene cuentas, contraseñas ni sincronización entre equipos. No la publiques en Internet ni la abras a toda una red sin agregar autenticación, HTTPS y controles de acceso.</p></div></div>
+            <div class="panel"><div class="panel-title"><h2>Distribución entre socios</h2></div><p class="settings-copy">El dashboard muestra una distribución ilustrativa 50/50 sobre la utilidad estimada, sin incorporar otros gastos ni impuestos.</p><div class="setting-row"><span>Utilidad aceptada estimada</span><strong id="settings-profit">—</strong></div><div class="setting-row"><span>Participación por socio (50%)</span><strong id="settings-share">—</strong></div></div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <dialog id="prospectDialog" class="modal"><form id="prospect-form"><div class="modal-heading"><div><p class="eyebrow">NUEVA OPORTUNIDAD</p><h2>Agregar prospecto</h2></div><button class="close-modal" type="button" data-close aria-label="Cerrar">×</button></div><label>Nombre del negocio <span>*</span><input class="field" name="business" required maxlength="100" placeholder="Ej. Café Central"></label><div class="form-cols"><label>Sector<input class="field" name="sector" maxlength="80" placeholder="Restaurante"></label><label>Persona de contacto<input class="field" name="contact" maxlength="100" placeholder="Nombre"></label></div><label>Teléfono de contacto<input class="field" name="phone" maxlength="60" placeholder="Número si fue proporcionado"></label><label>Notas<textarea class="field" name="note" maxlength="800" rows="3" placeholder="Necesidades, contexto, siguiente paso..."></textarea></label><div class="modal-actions"><button class="button button-muted" type="button" data-close>Cancelar</button><button class="button button-primary" type="submit">Guardar prospecto</button></div></form></dialog>
+  <dialog id="quoteDialog" class="modal"><form id="quote-form"><div class="modal-heading"><div><p class="eyebrow">NUEVA PROPUESTA</p><h2>Crear cotización</h2></div><button class="close-modal" type="button" data-close aria-label="Cerrar">×</button></div><label>Negocio <span>*</span><select class="field" name="prospect_id" id="quote-prospect" required></select></label><div class="form-cols"><label>Cantidad de tarjetas <span>*</span><input class="field" type="number" min="1" max="10000" step="1" name="quantity" value="1" required></label><label>Total a cobrar (MXN) <span>*</span><input class="field" type="number" min="0" step=".01" name="total" placeholder="400" required></label></div><label>Costo por tarjeta (MXN) <span>*</span><input class="field" type="number" min="0" step=".01" name="unit_cost" placeholder="Costo real de producción" required></label><p class="form-help">El total de la cotización es manual para permitir paquetes y descuentos. No se envía al cliente.</p><div class="modal-actions"><button class="button button-muted" type="button" data-close>Cancelar</button><button class="button button-primary" type="submit">Guardar cotización</button></div></form></dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
