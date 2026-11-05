@@ -1,269 +1,723 @@
 "use strict";
-
-let store = {prospects:[],quotes:[],runs:[],metrics:{},ollama:false,model:""};
-let currentOutput = "";
-let toastTimeout;
-
-const byId = id => document.getElementById(id);
-const money = value => new Intl.NumberFormat("es-MX",{style:"currency",currency:"MXN",maximumFractionDigits:2}).format(Number(value || 0));
-const date = value => {
-  if (!value) return "—";
-  const time = new Date(value.replace(" ","T") + "Z");
-  return Number.isNaN(time.getTime()) ? value : time.toLocaleDateString("es-MX",{day:"2-digit",month:"short",year:"numeric"});
+let state,
+  session,
+  page = "office";
+let disposeOffice = () => {};
+const root = document.getElementById("root");
+const dialog = document.getElementById("editor");
+const pesos = (n) =>
+  new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(
+    n / 100,
+  );
+const names = {
+  office: "Oficina virtual",
+  dashboard: "Visión general",
+  crm: "Prospectos y clientes",
+  tasks: "Seguimiento",
+  quotes: "Cotizaciones",
+  orders: "Pedidos y finanzas",
+  agents: "Centro de agentes",
+  settings: "Configuración",
 };
-const stageName = {nuevo:"Nuevo",contactado:"Contactado",negociacion:"Negociación",ganado:"Ganado",perdido:"Perdido"};
-const quoteName = {borrador:"Borrador",enviada:"Enviada",aceptada:"Aceptada",rechazada:"Rechazada"};
-const agentName = {coordinador:"Coordinador",prospeccion:"Prospección",ventas:"Ventas"};
-
-function element(tag, className="", text=null) {
-  const node=document.createElement(tag);
-  if(className) node.className=className;
-  if(text!==null) node.textContent=String(text);
-  return node;
+const stages = {
+  nuevo: "Nuevo",
+  contactado: "Contactado",
+  negociacion: "Negociación",
+  ganado: "Cliente",
+  perdido: "Perdido",
+};
+const quoteStates = {
+  borrador: "Borrador",
+  enviada: "Enviada manualmente",
+  aceptada: "Aceptada",
+  rechazada: "Rechazada",
+};
+const el = (tag, cls = "", text = "") => {
+  const n = document.createElement(tag);
+  n.className = cls;
+  n.textContent = text;
+  return n;
+};
+const button = (label, action, cls = "button button-muted") => {
+  const b = el("button", cls, label);
+  b.type = "button";
+  b.onclick = () => Promise.resolve(action()).catch((e) => toast(e.message));
+  return b;
+};
+function toast(message) {
+  const t = document.getElementById("toast");
+  t.textContent = message;
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 5000);
 }
-function empty(text) { const row=element("div","empty-box",text); return row; }
-function clear(node) { node.replaceChildren(); }
-function text(id,value) { byId(id).textContent=String(value); }
-function alertUser(message,isError=false) {
-  const toast=byId("toast");
-  toast.textContent=message;
-  toast.classList.toggle("error",isError);
-  toast.classList.add("show");
-  clearTimeout(toastTimeout);
-  toastTimeout=setTimeout(()=>toast.classList.remove("show"),4200);
-}
-async function api(path,method="GET",body=null) {
-  const options={method,headers:{}};
-  if(body!==null) {
-    options.headers["Content-Type"]="application/json";
-    options.body=JSON.stringify(body);
+async function api(path, method = "GET", data) {
+  const r = await fetch("/api/" + path, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRF-Token": session?.csrf || "",
+    },
+    body: data ? JSON.stringify(data) : undefined,
+  });
+  const body = await r.json();
+  if (!r.ok) {
+    if (r.status === 401 && path !== "login") {
+      session = null;
+      state = null;
+      dialog.close();
+      NFCOffice.reset();
+      login();
+    }
+    throw Error(body.error || "No se pudo completar");
   }
-  let response;
-  try {response=await fetch(path,options);}
-  catch (_) {throw new Error("No se puede conectar al servidor local. ¿Sigue abierto?");}
-  let data;
-  try {data=await response.json();}
-  catch (_) {throw new Error("El servidor devolvió una respuesta inválida");}
-  if(!response.ok) throw new Error(data.error || "Operación fallida");
-  return data;
+  return body;
 }
-async function load(silent=false) {
+async function executeAgent(agent, prospect_id) {
+  const owner = session;
+  const result = await NFCOffice.execute(agent, prospect_id, () =>
+    api("agents/run", "POST", { agent, prospect_id }),
+  );
+  // Logout/session expiration invalidates pending UI updates; never reopen a previous user's view.
+  if (session !== owner) return result;
   try {
-    store=await api("/api/state");
-    render();
-    if(!silent) alertUser("Datos actualizados");
-  } catch(error) {alertUser(error.message,true);}
+    await refresh();
+  } catch {
+    if (session === owner)
+      toast(
+        "Resultado recibido. No se pudo actualizar el historial; usa Actualizar.",
+      );
+  }
+  return result;
 }
-function navigate(page) {
-  if(!byId("page-"+page)) return;
-  document.querySelectorAll(".page").forEach(section=>section.classList.toggle("active",section.id==="page-"+page));
-  document.querySelectorAll(".nav-btn").forEach(button=>button.classList.toggle("active",button.dataset.page===page));
-  text("breadcrumb-current",{
-    dashboard:"Visión general",prospects:"Prospectos",quotes:"Cotizaciones",
-    agents:"Centro de agentes",settings:"Sistema"
-  }[page]);
-  if(window.innerWidth<801) window.scrollTo({top:0,behavior:"smooth"});
+async function refresh() {
+  const owner = session;
+  const updated = await api("state");
+  if (!owner || session !== owner) return;
+  state = updated;
+  render();
+}
+const businesses = () => state.prospects.map((p) => [p.id, p.business]);
+const users = () => state.users.map((u) => [u.id, u.username]);
+const business = (id) =>
+  state.prospects.find((p) => p.id === id)?.business ||
+  "Registro no disponible";
+function form(title, fields, submit) {
+  const f = el("form");
+  f.append(el("h2", "", title));
+  for (const [name, label, type = "text", value = "", options] of fields) {
+    const l = el("label", "", label);
+    let i;
+    if (type === "select") {
+      i = el("select", "field");
+      for (const [v, t] of options) {
+        const o = el("option", "", t);
+        o.value = v;
+        i.append(o);
+      }
+      i.value = String(value !== "" ? value : (options[0]?.[0] ?? ""));
+    } else {
+      i = el(type === "textarea" ? "textarea" : "input", "field");
+      if (type !== "textarea") i.type = type;
+      i.value = value;
+      i.maxLength = type === "textarea" ? 800 : 200;
+      if (type === "number") {
+        i.min = "0";
+        i.max = "100000000";
+        i.step = ".01";
+      }
+    }
+    i.name = name;
+    i.setAttribute("aria-label", label);
+    i.required = !["sector", "contact", "phone", "note"].includes(name);
+    l.append(i);
+    f.append(l);
+  }
+  const error = el("p", "form-error");
+  error.setAttribute("role", "alert");
+  const save = el("button", "button button-primary", "Guardar");
+  save.type = "submit";
+  f.append(error, save);
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    save.disabled = true;
+    try {
+      await submit(Object.fromEntries(new FormData(f)));
+    } catch (err) {
+      error.textContent = err.message;
+    } finally {
+      save.disabled = false;
+    }
+  };
+  return f;
+}
+function edit(title, fields, path, method = "POST", extra = {}) {
+  dialog.replaceChildren(button("Cerrar", () => dialog.close(), "close-modal"));
+  const requestId = globalThis.crypto.randomUUID();
+  dialog.append(
+    form(title, fields, async (data) => {
+      await api(path, method, { ...data, ...extra, request_id: requestId });
+      dialog.close();
+      await refresh();
+      toast("Guardado");
+    }),
+  );
+  dialog.showModal();
+}
+function login() {
+  disposeOffice();
+  root.replaceChildren();
+  const card = el("main", "login panel");
+  card.append(el("p", "eyebrow", "NFC AI OFFICE · 1.0"));
+  const f = form(
+    "Acceso de socios",
+    [
+      ["username", "Usuario"],
+      ["password", "Contraseña", "password"],
+    ],
+    async (data) => {
+      session = await api("login", "POST", data);
+      page = "office";
+      await refresh();
+    },
+  );
+  f.querySelector("[name=username]").autocomplete = "username";
+  f.querySelector("[name=password]").autocomplete = "current-password";
+  f.querySelector("button").textContent = "Iniciar sesión";
+  card.append(
+    f,
+    el(
+      "p",
+      "table-hint",
+      "Dos socios, un espacio compartido. Solicita tu cuenta a quien administra esta instalación.",
+    ),
+  );
+  root.append(card);
+}
+function table(headers, rows) {
+  const wrap = el("div", "table-wrap"),
+    t = el("table"),
+    head = el("thead"),
+    tr = el("tr");
+  headers.forEach((h) => tr.append(el("th", "", h)));
+  head.append(tr);
+  t.append(head);
+  const body = el("tbody");
+  for (const cells of rows) {
+    const r = el("tr");
+    for (const [index, cell] of cells.entries()) {
+      const td = el("td");
+      td.dataset.label = headers[index];
+      if (cell instanceof Node) td.append(cell);
+      else td.textContent = cell;
+      r.append(td);
+    }
+    body.append(r);
+  }
+  t.append(body);
+  wrap.append(t);
+  if (!rows.length)
+    wrap.append(
+      el(
+        "p",
+        "empty-box",
+        "Todavía no hay registros. Agrega el primero para comenzar.",
+      ),
+    );
+  return wrap;
+}
+function stack(...children) {
+  const n = el("div", "actions");
+  n.append(...children);
+  return n;
+}
+function statusSelect(value, options, path, key) {
+  const s = el("select", "field");
+  s.setAttribute("aria-label", "Estado");
+  Object.entries(options).forEach(([v, t]) => {
+    const o = el("option", "", t);
+    o.value = v;
+    s.append(o);
+  });
+  s.value = value;
+  s.onchange = async () => {
+    s.disabled = true;
+    try {
+      await api(path, "PATCH", { [key]: s.value });
+      await refresh();
+    } catch (e) {
+      s.value = value;
+      toast(e.message);
+    } finally {
+      s.disabled = false;
+    }
+  };
+  return s;
+}
+function prospectEdit(p) {
+  edit(
+    p ? "Editar negocio" : "Agregar negocio",
+    [
+      ["business", "Negocio", "text", p?.business],
+      ["sector", "Sector", "text", p?.sector],
+      ["contact", "Contacto", "text", p?.contact],
+      ["phone", "Teléfono", "tel", p?.phone],
+    ],
+    p ? "prospects/" + p.id : "prospects",
+    p ? "PATCH" : "POST",
+  );
 }
 function render() {
-  renderMetrics(); renderPipeline(); renderProspects();
-  renderQuotes(); renderAgents(); renderRuns(); renderSettings();
-}
-function renderMetrics() {
-  const m=store.metrics;
-  text("m-prospects",m.prospects);
-  text("m-active",m.active);
-  text("m-pending",m.pending);
-  text("m-profit",money(m.profit));
-}
-function renderPipeline() {
-  const node=byId("pipeline");clear(node);
-  const stages=["nuevo","contactado","negociacion","ganado","perdido"];
-  const max=Math.max(1,...stages.map(s=>store.prospects.filter(p=>p.stage===s).length));
-  for(const name of stages) {
-    const count=store.prospects.filter(p=>p.stage===name).length;
-    const row=element("div","pipeline-row");
-    const label=element("span","pipeline-label",stageName[name]);
-    const track=element("div","pipeline-track");
-    const fill=element("div","pipeline-fill");
-    fill.style.width=(count/max*100)+"%";
-    track.append(fill);
-    row.append(label,track,element("span","pipeline-count",count));
-    node.append(row);
-  }
-}
-function renderProspects() {
-  text("prospect-count",store.prospects.length+" registros");
-  const tbody=byId("prospect-rows");clear(tbody);
-  if(!store.prospects.length) {
-    const tr=element("tr");const td=element("td","", "Sin prospectos todavía. Usa «Agregar negocio» para comenzar.");
-    td.colSpan=5;tr.append(td);tbody.append(tr);
-  }
-  for(const p of store.prospects) {
-    const tr=element("tr");
-    const business=element("td","",p.business);
-    business.append(element("small","subtext",p.sector || "Sin sector"));
-    const contact=element("td","",p.contact || "Sin contacto");
-    contact.append(element("small","subtext",p.phone || "Sin teléfono"));
-    const stage=element("td");const select=element("select","stage-select");
-    select.setAttribute("aria-label","Etapa de "+p.business);
-    for(const [value,label] of Object.entries(stageName)) {
-      const option=element("option","",label);option.value=value;option.selected=p.stage===value;select.append(option);
-    }
-    select.addEventListener("change",async()=>{
-      select.disabled=true;
-      try {await api("/api/prospects/"+p.id,"PATCH",{stage:select.value});await load(true);alertUser("Etapa actualizada");}
-      catch(e){select.value=p.stage;alertUser(e.message,true);}
-      finally {select.disabled=false;}
-    });
-    stage.append(select);
-    const priority=element("td");const indicator=element("span","priority");
-    indicator.append(element("span","priority-dot"+(p.priority>=60?" high":"")));
-    indicator.append(document.createTextNode(p.priority+"/100"));
-    priority.append(indicator);
-    tr.append(business,contact,stage,priority,element("td","",date(p.created_at)));
-    tbody.append(tr);
-  }
-}
-function renderQuotes() {
-  text("quote-count",store.quotes.length+" registros");
-  const tbody=byId("quote-rows");clear(tbody);
-  if(!store.quotes.length) {
-    const tr=element("tr"),td=element("td","", "No hay cotizaciones. Crea la primera cuando tengas un prospecto.");
-    td.colSpan=6;tr.append(td);tbody.append(tr);
-  }
-  for(const q of store.quotes) {
-    const p=store.prospects.find(p=>p.id===q.prospect_id);
-    const tr=element("tr");
-    const status=element("td"),select=element("select","stage-select");
-    select.setAttribute("aria-label","Estado de cotización "+q.id);
-    for(const [value,label] of Object.entries(quoteName)) {
-      const option=element("option","",label);option.value=value;option.selected=q.status===value;select.append(option);
-    }
-    select.addEventListener("change",async()=>{
-      select.disabled=true;
-      try {await api("/api/quotes/"+q.id,"PATCH",{status:select.value});await load(true);alertUser("Cotización actualizada");}
-      catch(e){select.value=q.status;alertUser(e.message,true);}
-      finally {select.disabled=false;}
-    });
-    status.append(select);
-    tr.append(
-      element("td","",p ? p.business : "Prospecto #"+q.prospect_id),
-      element("td","",q.quantity),
-      element("td","",money(q.total)),
-      element("td","",money(q.unit_cost)),
-      status,element("td","",date(q.created_at))
+  disposeOffice();
+  disposeOffice = () => {};
+  root.replaceChildren();
+  const shell = el("div", "shell"),
+    side = el("aside", "sidebar");
+  side.append(
+    el("div", "brand", "◈ NFC OFFICE"),
+    el("p", "eyebrow", "ESPACIO DE LOS SOCIOS"),
+  );
+  const nav = el("nav", "navigation");
+  for (const [id, label] of Object.entries(names))
+    nav.append(
+      button(
+        label,
+        () => {
+          page = id;
+          render();
+        },
+        "nav-btn" + (page === id ? " active" : ""),
+      ),
     );
-    tbody.append(tr);
+  side.append(nav);
+  const main = el("main", "main-content"),
+    bar = el("header", "topbar");
+  bar.append(
+    el("strong", "", names[page]),
+    stack(
+      el("span", "", session.username),
+      button("Actualizar", refresh),
+      button("Salir", async () => {
+        await api("logout", "POST", {});
+        session = null;
+        state = null;
+        NFCOffice.reset();
+        login();
+      }),
+    ),
+  );
+  const content = el("div", "content");
+  if (page === "office") {
+    main.append(bar, content);
+    shell.append(side, main);
+    root.append(shell);
+    disposeOffice = NFCOffice.mount(content, {
+      state,
+      executeAgent,
+      navigate: (target) => {
+        page = target;
+        render();
+      },
+    });
+    return;
+  }
+
+  content.append(
+    el("p", "eyebrow", "NFC AI OFFICE / 1.0"),
+    el("h1", "", names[page]),
+    el("p", "subheading", "Información compartida · Acciones bajo tu control"),
+  );
+  const panel = el("section", "panel workspace-panel");
+  content.append(panel);
+  main.append(bar, content);
+  shell.append(side, main);
+  root.append(shell);
+  if (page === "dashboard") {
+    const m = state.metrics,
+      metrics = el("div", "metrics");
+    for (const [label, value] of [
+      ["Negocios", m.prospects],
+      ["Clientes", m.clients],
+      ["Cobrado", pesos(m.collected)],
+      ["Saldo por cobrar", pesos(m.balance)],
+    ]) {
+      const c = el("article", "metric");
+      c.append(
+        el("span", "metric-caption", label),
+        el("div", "metric-number", value),
+      );
+      metrics.append(c);
+    }
+    panel.append(metrics);
+    panel.append(
+      el("h2", "", "Resultado por pedidos"),
+      el(
+        "p",
+        "settings-copy",
+        `Ventas confirmadas: ${pesos(m.sales)} · Margen estimado: ${pesos(m.profit)}`,
+      ),
+      el(
+        "p",
+        "settings-copy",
+        `Socio A: ${pesos(m.share_a)} · Socio B: ${pesos(m.share_b)}`,
+      ),
+      el(
+        "p",
+        "table-hint",
+        "Margen = total de pedidos − costo directo − gastos registrados. Incluye ventas pendientes de cobro. El reparto es una estimación, no un retiro ni utilidad fiscal.",
+      ),
+    );
+    panel.append(
+      table(
+        ["Etapa", "Negocios"],
+        Object.entries(stages).map(([k, v]) => [
+          v,
+          state.prospects.filter((p) => p.stage === k).length,
+        ]),
+      ),
+      button("Registrar oportunidad", () => prospectEdit()),
+    );
+  } else if (page === "crm") {
+    panel.append(
+      button(
+        "+ Agregar negocio",
+        () => prospectEdit(),
+        "button button-primary",
+      ),
+    );
+    const search = el("input", "field");
+    search.placeholder = "Buscar negocio, contacto o teléfono";
+    search.setAttribute("aria-label", "Buscar");
+    const list = el("div");
+    const draw = () => {
+      const q = search.value.toLocaleLowerCase("es-MX");
+      list.replaceChildren(
+        table(
+          ["Negocio", "Contacto", "Etapa", "Acciones"],
+          state.prospects
+            .filter((p) =>
+              [p.business, p.contact, p.phone]
+                .join(" ")
+                .toLocaleLowerCase("es-MX")
+                .includes(q),
+            )
+            .map((p) => [
+              p.business,
+              `${p.contact} · ${p.phone}`,
+              statusSelect(p.stage, stages, "prospects/" + p.id, "stage"),
+              stack(
+                button("Editar", () => prospectEdit(p)),
+                button("Historial", () => history(p)),
+              ),
+            ]),
+        ),
+      );
+    };
+    search.oninput = draw;
+    panel.append(search, list);
+    draw();
+  } else if (page === "tasks") {
+    panel.append(
+      button("+ Nueva tarea", () =>
+        edit(
+          "Nueva tarea",
+          [
+            ["prospect_id", "Negocio", "select", "", businesses()],
+            ["title", "Tarea"],
+            ["due", "Fecha límite", "date"],
+            ["assignee", "Responsable", "select", "", users()],
+          ],
+          "tasks",
+        ),
+      ),
+    );
+    panel.append(
+      table(
+        ["Negocio", "Tarea", "Fecha límite", "Responsable", "Estado"],
+        state.tasks.map((t) => [
+          business(t.prospect_id),
+          t.title,
+          t.due,
+          state.users.find((u) => u.id === t.assignee)?.username || "",
+          button(
+            t.done ? "Completada · reabrir" : "Marcar completada",
+            async () => {
+              await api("tasks/" + t.id, "PATCH", { done: t.done ? 0 : 1 });
+              await refresh();
+            },
+          ),
+        ]),
+      ),
+    );
+  } else if (page === "quotes") {
+    panel.append(
+      button("+ Nueva cotización", () =>
+        edit(
+          "Cotización (MXN)",
+          [
+            ["prospect_id", "Negocio", "select", "", businesses()],
+            ["quantity", "Cantidad", "number", 1],
+            [
+              "total",
+              "Total acordado (ajusta por cantidad)",
+              "number",
+              state.settings.price / 100,
+            ],
+            [
+              "unit_cost",
+              "Costo por tarjeta",
+              "number",
+              state.settings.cost / 100,
+            ],
+          ],
+          "quotes",
+        ),
+      ),
+    );
+    panel.append(
+      table(
+        [
+          "Folio / negocio",
+          "Cantidad",
+          "Total",
+          "Costo unitario",
+          "Estado",
+          "Pedido",
+        ],
+        state.quotes.map((q) => {
+          const converted = state.orders.some((o) => o.quote_id === q.id);
+          const b = button("Crear pedido", () =>
+            edit("Confirmar pedido", [], "orders", "POST", { quote_id: q.id }),
+          );
+          b.disabled = converted || q.status !== "aceptada";
+          return [
+            `#${q.id} · ${business(q.prospect_id)}`,
+            q.quantity,
+            pesos(Math.round(q.total * 100)),
+            pesos(Math.round(q.unit_cost * 100)),
+            converted
+              ? "Aceptada · bloqueada"
+              : statusSelect(q.status, quoteStates, "quotes/" + q.id, "status"),
+            b,
+          ];
+        }),
+      ),
+    );
+    panel.append(
+      el(
+        "p",
+        "table-hint",
+        "Crear pedido fija el total, costo y porcentaje de reparto actuales. Una cotización aceptada por sí sola no cuenta como venta. No se envían documentos automáticamente.",
+      ),
+    );
+  } else if (page === "orders") {
+    panel.append(
+      table(
+        [
+          "Pedido",
+          "Operación",
+          "Total / cobrado / saldo",
+          "Margen / reparto",
+          "Registro manual",
+        ],
+        state.orders.map((o) => [
+          o.id,
+          statusSelect(
+            o.status,
+            {
+              pendiente: "Pendiente",
+              produccion: "En producción",
+              entregado: "Entregado",
+            },
+            "orders/" + o.id,
+            "status",
+          ),
+          `${pesos(o.total)} / ${pesos(o.paid)} / ${pesos(o.balance)} (${o.payment_status})`,
+          `${pesos(o.profit)} · A ${o.share}%: ${pesos(o.share_a)} / B: ${pesos(o.share_b)}`,
+          stack(
+            button("Registrar pago", () =>
+              edit(
+                "Registrar pago ya recibido (no realiza cobros)",
+                [
+                  ["amount", "Monto recibido MXN", "number", o.balance / 100],
+                  ["reference", "Referencia o comprobante"],
+                ],
+                "payments",
+                "POST",
+                { order_id: o.id },
+              ),
+            ),
+            button("Agregar gasto", () =>
+              edit(
+                "Gasto adicional al costo directo",
+                [
+                  ["amount", "Monto MXN", "number"],
+                  ["description", "Concepto"],
+                ],
+                "expenses",
+                "POST",
+                { order_id: o.id },
+              ),
+            ),
+          ),
+        ]),
+      ),
+    );
+    panel.append(
+      el("h2", "", "Pagos registrados"),
+      table(
+        ["Pedido", "Importe", "Referencia", "Fecha UTC"],
+        state.payments.map((p) => [
+          p.order_id,
+          pesos(p.amount),
+          p.reference,
+          p.created_at,
+        ]),
+      ),
+      el("h2", "", "Gastos adicionales"),
+      table(
+        ["Pedido", "Importe", "Concepto"],
+        state.expenses.map((e) => [e.order_id, pesos(e.amount), e.description]),
+      ),
+    );
+  } else if (page === "agents") {
+    panel.append(
+      el(
+        "p",
+        "settings-copy",
+        "Coordinador y finanzas consultan registros internos. Prospección revisa datos existentes; no investiga en Internet. Ventas usa Ollama si responde; de lo contrario genera una plantilla. Revisa todo resultado antes de utilizarlo.",
+      ),
+    );
+    const f = form(
+      "Ejecutar herramienta",
+      [
+        [
+          "agent",
+          "Agente",
+          "select",
+          "coordinador",
+          [
+            ["coordinador", "Coordinador"],
+            ["prospeccion", "Prospección asistida"],
+            ["ventas", "Ventas"],
+            ["finanzas", "Finanzas"],
+          ],
+        ],
+        [
+          "prospect_id",
+          "Negocio (ventas y prospección)",
+          "select",
+          "",
+          [[0, "Sin selección"], ...businesses()],
+        ],
+      ],
+      async (data) => {
+        await executeAgent(data.agent, data.prospect_id);
+      },
+    );
+    f.querySelector("button").textContent = "Generar análisis o borrador";
+    panel.append(f);
+    for (const run of state.runs) {
+      const card = el("article", "panel");
+      card.append(
+        el("h3", "", `${run.agent} · ${run.mode} · #${run.id}`),
+        el(
+          "small",
+          "",
+          run.created_at +
+            " UTC · " +
+            (run.prospect_id ? business(run.prospect_id) : "Datos internos"),
+        ),
+        el("pre", "agent-output", run.result),
+        el(
+          "p",
+          "table-hint",
+          "Resultado histórico. Puede quedar desactualizado; no ejecuta acciones externas.",
+        ),
+      );
+      panel.append(card);
+    }
+  } else if (page === "settings") {
+    panel.append(
+      form(
+        "Precios y reparto para nuevos pedidos",
+        [
+          [
+            "price",
+            "Precio sugerido por tarjeta (MXN)",
+            "number",
+            state.settings.price / 100,
+          ],
+          [
+            "cost",
+            "Costo directo por tarjeta (MXN)",
+            "number",
+            state.settings.cost / 100,
+          ],
+          [
+            "share",
+            "Porcentaje socio A (B recibe el resto)",
+            "number",
+            state.settings.share,
+          ],
+        ],
+        async (data) => {
+          await api("settings", "POST", data);
+          await refresh();
+          toast("Configuración guardada");
+        },
+      ),
+    );
+    panel.append(
+      el(
+        "p",
+        "table-hint",
+        "A y B son los socios según su acuerdo comercial. Los pedidos existentes conservan su reparto; asignen esos nombres por escrito. No incluye impuestos no registrados ni mueve fondos.",
+      ),
+      el(
+        "p",
+        "settings-copy",
+        `Modelo opcional: ${state.model}. Las cuentas y contraseñas se administran desde la consola del servidor.`,
+      ),
+      el("h2", "", "Bitácora reciente"),
+      table(
+        ["Socio", "Acción", "Fecha UTC"],
+        state.audit.map((a) => [
+          state.users.find((u) => u.id === a.user_id)?.username || a.user_id,
+          a.action,
+          a.created_at,
+        ]),
+      ),
+    );
   }
 }
-function setChoices(select,placeholder) {
-  const old=select.value;clear(select);
-  const first=element("option","",placeholder);first.value="";first.disabled=true;select.append(first);
-  for(const p of store.prospects) {
-    const option=element("option","",p.business);
-    option.value=String(p.id);select.append(option);
-  }
-  select.value=store.prospects.some(p=>String(p.id)===old) ? old :
-    (store.prospects.length ? String(store.prospects[0].id) : "");
-  select.disabled=store.prospects.length===0;
+function history(p) {
+  dialog.replaceChildren(
+    button("Cerrar", () => dialog.close(), "close-modal"),
+    el("h2", "", p.business),
+  );
+  if (p.note) dialog.append(el("p", "", p.note));
+  for (const n of state.notes.filter((n) => n.prospect_id === p.id))
+    dialog.append(
+      el(
+        "p",
+        "",
+        `${n.created_at} UTC · ${state.users.find((u) => u.id === n.author)?.username}: ${n.body}`,
+      ),
+    );
+  dialog.append(
+    form("Agregar nota", [["body", "Nota", "textarea"]], async (data) => {
+      await api("notes", "POST", { ...data, prospect_id: p.id });
+      await refresh();
+      history(p);
+    }),
+  );
+  if (!dialog.open) dialog.showModal();
 }
-function renderAgents() {
-  setChoices(byId("prospection-select"),"Agrega un prospecto");
-  setChoices(byId("sales-select"),"Agrega un prospecto");
-  setChoices(byId("quote-prospect"),"Agrega un prospecto");
-  for(const button of document.querySelectorAll(".run-agent")) {
-    button.disabled=button.dataset.agent!=="coordinador"&&!store.prospects.length;
-  }
-}
-function renderRuns() {
-  const node=byId("latest-runs");clear(node);
-  if(!store.runs.length) {node.append(empty("Sin actividad por ahora. Ejecuta un agente para comenzar."));return;}
-  for(const run of store.runs.slice(0,4)) {
-    const box=element("div","run-entry");
-    const icon=element("span","run-symbol","✳");
-    const content=element("div");
-    content.append(element("strong","",agentName[run.agent]||run.agent));
-    const p=store.prospects.find(p=>p.id===run.prospect_id);
-    content.append(element("small","",(p ? p.business+" · " : "")+run.mode+" · "+date(run.created_at)));
-    box.append(icon,content);node.append(box);
-  }
-}
-function renderSettings() {
-  text("ollama-status",store.ollama?"Servidor accesible":"No detectado · modo plantilla");
-  text("ollama-model",store.model || "—");
-  text("settings-profit",money(store.metrics.profit));
-  text("settings-share",money(store.metrics.partner_share));
-}
-async function handleSubmit(form,path,data,dialogId) {
-  const submit=form.querySelector('[type="submit"]');
-  submit.disabled=true;
+(async () => {
   try {
-    await api(path,"POST",data);
-    form.reset();
-    byId(dialogId).close();
-    await load(true);
-    navigate(path==="/api/prospects"?"prospects":"quotes");
-    alertUser("Guardado correctamente");
-  } catch(e) {alertUser(e.message,true);}
-  finally {submit.disabled=false;}
-}
-function bindForms() {
-  byId("prospect-form").addEventListener("submit",e=>{
-    e.preventDefault();
-    const data=Object.fromEntries(new FormData(e.currentTarget));
-    handleSubmit(e.currentTarget,"/api/prospects",data,"prospectDialog");
-  });
-  byId("quote-form").addEventListener("submit",e=>{
-    e.preventDefault();
-    const data=Object.fromEntries(new FormData(e.currentTarget));
-    handleSubmit(e.currentTarget,"/api/quotes",data,"quoteDialog");
-  });
-}
-async function executeAgent(button) {
-  const agent=button.dataset.agent;
-  let prospectId=null;
-  if(agent==="prospeccion") prospectId=byId("prospection-select").value;
-  if(agent==="ventas") prospectId=byId("sales-select").value;
-  button.disabled=true;const label=button.textContent;
-  button.textContent="Ejecutando…";
-  try {
-    const output=await api("/api/agents/run","POST",{agent,prospect_id:prospectId || null});
-    currentOutput=output.result;
-    text("agent-output",currentOutput);
-    text("output-meta",agentName[agent]+" · "+output.mode.toUpperCase()+" · Requiere revisión humana");
-    byId("copy-output").disabled=false;
-    await load(true);
-    alertUser("Resultado generado");
-  } catch(e){alertUser(e.message,true);}
-  finally {button.textContent=label;button.disabled=false;}
-}
-document.addEventListener("DOMContentLoaded",()=>{
-  text("today",new Intl.DateTimeFormat("es-MX",{weekday:"long",day:"numeric",month:"long",year:"numeric"}).format(new Date()));
-  document.querySelectorAll("[data-page]").forEach(button=>
-    button.addEventListener("click",()=>navigate(button.dataset.page))
-  );
-  document.querySelectorAll("[data-open]").forEach(button=>
-    button.addEventListener("click",()=>{
-      const dialog=byId(button.dataset.open);
-      if(button.dataset.open==="quoteDialog"&&!store.prospects.length) {
-        alertUser("Primero registra al menos un prospecto",true);return;
-      }
-      dialog.showModal();
-    })
-  );
-  document.querySelectorAll("[data-close]").forEach(button=>
-    button.addEventListener("click",()=>button.closest("dialog").close())
-  );
-  document.querySelectorAll("dialog").forEach(dialog=>
-    dialog.addEventListener("click",e=>{if(e.target===dialog)dialog.close();})
-  );
-  byId("refresh").addEventListener("click",()=>load());
-  document.querySelectorAll(".run-agent").forEach(button=>
-    button.addEventListener("click",()=>executeAgent(button))
-  );
-  byId("copy-output").addEventListener("click",async()=>{
-    try {await navigator.clipboard.writeText(currentOutput);alertUser("Resultado copiado");}
-    catch(_){alertUser("No se pudo copiar automáticamente. Selecciona el texto.",true);}
-  });
-  bindForms();load(true);
-});
+    session = await api("session");
+    await refresh();
+  } catch (e) {
+    login();
+  }
+})();

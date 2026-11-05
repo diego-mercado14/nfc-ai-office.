@@ -1,103 +1,69 @@
-# NFC AI Office
+# NFC AI Office 1.0
 
-Centro de operaciones gratuito y local para tarjetas NFC: prospectos, cotizaciones, indicadores y agentes de apoyo a ventas. Interfaz oscura adaptable a móvil y escritorio.
+Oficina compartida para un negocio de tarjetas NFC operado por dos socios. Python 3.10+, SQLite y JavaScript sin dependencias de ejecución. Interfaz oscura responsive en español mexicano. No requiere una API de pago.
 
-> **Estado: MVP v0.1.** Aplicación local en desarrollo. No es un CRM de producción, no tiene cuentas ni sincronización multiusuario, y no está alojada en Internet.
+## Oficina virtual interactiva
 
-## Funciones incluidas
+Después del inicio de sesión se abre una oficina isométrica en pixel art original. Selecciona a Coordinador, Prospección, Ventas o Finanzas para ejecutar sus herramientas y consultar resultados reales. Las vistas empresariales tradicionales siguen en el menú. No hay ejecuciones automáticas ni nuevos paquetes de frontend.
 
-- Dashboard: prospectos, oportunidades activas, cotizaciones pendientes y utilidad estimada.
-- Prospectos: crear negocios con contacto, teléfono, notas y etapa comercial.
-- Cotizaciones: registrar cantidad, importe total, costo por tarjeta y estado.
-- Coordinador: resumen y prioridades mediante reglas locales, sin un LLM.
-- Prospección: analiza la información de un negocio ya registrado (no busca en la web).
-- Ventas: prepara un borrador de WhatsApp con Ollama si está disponible; de lo contrario usa una plantilla. Nunca envía mensajes.
-- SQLite: conserva los registros en la computadora, sin nube ni API de pago.
-- Todas las acciones de contacto con clientes requieren revisión humana.
+Consulta [uso, arquitectura, capturas y pruebas de la oficina](docs/PIXEL_OFFICE.md).
 
-## Iniciar en Windows
+## Instalar y arrancar
 
-Requisitos: **Python 3.10+**, Git y un navegador. No requiere instalar paquetes de Python.
+```sh
+git clone https://github.com/diego-mercado14/nfc-ai-office. nfc-ai-office
+cd nfc-ai-office
+python3 server.py create-user --username socio_a
+python3 server.py create-user --username socio_b
+python3 server.py
+```
 
-1. En PowerShell, clona el repositorio usando un nombre de carpeta sin punto final:
+En Windows utiliza `py` en lugar de `python3`. La consola solicita cada contraseña dos veces (mínimo 12 caracteres); nunca la pases como argumento ni la guardes en Git. Abre `http://127.0.0.1:8765` e inicia sesión. No hay credenciales predeterminadas ni registro público. Para recuperar una cuenta, ejecuta `python3 server.py reset-password --username socio_a`; se invalidan sus sesiones.
 
-   ~~~powershell
-   git clone "https://github.com/diego-mercado14/nfc-ai-office." nfc-ai-office
-   cd nfc-ai-office
-   ~~~
+Las variables de `.env.example` se **exportan explícitamente** en la terminal o se configuran en el servicio; el servidor no carga archivos `.env`. `NFC_ORIGIN` debe coincidir con el origen del navegador. No se deben abrir puertos del servidor a Internet; sigue [despliegue seguro](docs/DEPLOYMENT.md) para compartir una instalación por HTTPS.
 
-2. Ejecuta el servidor:
+## Flujo de trabajo
 
-   ~~~powershell
-   py server.py
-   ~~~
+1. Crea un negocio en **Prospectos y clientes**. Edita datos, cambia su etapa y agrega notas al historial. La etapa Cliente identifica negocios ganados.
+2. En **Seguimiento**, asigna tareas a uno de los socios con fecha límite. Marca completadas o reabre pendientes.
+3. En **Configuración**, establece precio y costo sugeridos por tarjeta y porcentaje del socio A; B recibe el resto. Ambos socios tienen los mismos permisos. A/B son etiquetas de su acuerdo, no IDs de cuenta.
+4. Crea una cotización con cantidad, total acordado y costo unitario. El total se captura explícitamente para permitir paquetes y descuentos. El precio sugerido corresponde a una tarjeta; ajústalo al cambiar cantidad.
+5. Marca aceptada la cotización después de la aceptación real y confirma **Crear pedido**. Solo se puede crear uno por cotización. El pedido fija precio, costo y reparto; queda bloqueado el estado de la cotización.
+6. Registra pagos **ya recibidos** con referencia, gastos adicionales y avance del pedido. No se procesa ningún cobro. El servidor impide exceder el saldo y deduplica reintentos del mismo pago.
+7. Consulta margen, saldo por cobrar y participación estimada por socio. Revisa la bitácora de operaciones.
 
-   Si tu PC no reconoce el comando py, usa python server.py.
+Los pedidos y pagos usan centavos enteros MXN. Para conservar bases anteriores, las cotizaciones mantienen su esquema original y se convierten con redondeo decimal al crear el pedido. Margen = total del pedido − cantidad × costo directo − gastos adicionales. Cobrado = suma de pagos registrados. El reparto se fija por pedido; A recibe la división entera en centavos y B el resto, incluso si hay pérdida. No representa retiros, utilidad fiscal ni efectivo disponible. Agrega gastos solo una vez; el costo directo ya está descontado.
 
-3. Abre **http://127.0.0.1:8765** en el navegador.
-4. Cuando quieras apagar el sistema, presiona Ctrl+C en PowerShell.
+## Agentes y límites
 
-**Importante:** GitHub guardó el nombre del repositorio con un punto al final: nfc-ai-office. Utiliza la URL exacta que aparece arriba. La carpeta local puede tener el nombre normal sin punto.
+- **Coordinador:** consulta métricas y tareas pendientes registradas; conserva el informe histórico.
+- **Prospección asistida:** inspecciona un negocio registrado y señala datos faltantes. No investiga en la web ni estima probabilidad de compra.
+- **Ventas:** crea un borrador con Ollama o una plantilla si el modelo no responde. Indica el modo utilizado. Los datos del cliente se incluyen en el prompt: usa únicamente un servidor Ollama de confianza.
+- **Finanzas:** consulta pedidos, pagos, gastos, saldos y reparto en un informe verificable.
 
-Los registros aparecerán en **data/office.db** al iniciar el servidor. Este archivo queda fuera de GitHub: realiza copias de seguridad privadas si guardas datos reales.
+Son herramientas ejecutadas a petición del socio. No hay autonomía en segundo plano, envío de mensajes, publicaciones ni movimientos financieros. Los informes son fotografías del momento; vuelve a ejecutarlos si cambian los registros. El modelo puede equivocarse: revisa el borrador antes de usarlo.
 
-## IA local gratuita (opcional)
+Ollama es opcional. Instálalo por su canal oficial y ejecuta `ollama pull qwen2.5:1.5b` si tu equipo tiene recursos suficientes. No fue necesario descargar ni verificar ese modelo para validar el modo gratuito sin modelo. El alojamiento, electricidad, almacenamiento y dominio pueden tener costos; Python/SQLite no requieren licencias de pago.
 
-El software funciona sin Ollama. Para que el agente de ventas use un modelo local:
+## Verificar
 
-1. Instala Ollama: https://ollama.com/.
-2. Con Ollama ejecutándose, abre otra terminal y descarga un modelo pequeño:
+```sh
+python3 -m compileall -q server.py domain.py security.py tests
+python3 -m unittest discover -s tests -v
+node --check web/app.js
+node --check web/office.js
+```
 
-   ~~~powershell
-   ollama pull qwen2.5:1.5b
-   ~~~
+Node solo se utiliza para comprobar sintaxis. Las pruebas crean bases temporales y servidores loopback. Para la prueba opcional de interfaz instala Playwright en un entorno de pruebas y Chromium; `python3 tests/browser_smoke.py` usa `/usr/bin/chromium` y genera capturas en `/tmp/nfc-office-ui`. Este recorrido comprueba login, CRM, notas, tareas, cotizaciones, pedidos, pagos, gastos, finanzas y logout en escritorio y móvil. No requiere datos reales.
 
-3. Recarga el dashboard. En Sistema podrás ver si Ollama está accesible.
-4. En Agentes IA → Ventas, selecciona un prospecto y genera un borrador.
+## Datos y arquitectura
 
-Si el modelo no está disponible o falla, el agente utiliza una plantilla. Con 8 GB de RAM conviene probar modelos pequeños y ejecutarlos de uno en uno. La descarga inicial sí requiere Internet.
+- `server.py`: HTTP, autenticación, CSRF y comandos de administración.
+- `security.py`: scrypt, tokens opacos, expiración y limitación de intentos.
+- `domain.py`: SQLite, migración aditiva, reglas comerciales y herramientas de agentes.
+- `web/`: interfaz sin bibliotecas ni recursos de terceros.
+- `tests/`: integración HTTP y prueba opcional de navegador.
 
-Variables opcionales: PORT (predeterminado 8765), OLLAMA_MODEL (qwen2.5:1.5b), OLLAMA_URL (http://127.0.0.1:11434) y NFC_DB_PATH (ruta de SQLite).
+La base predeterminada es `data/office.db`, ignorada por Git. Las migraciones son aditivas y conservan prospectos, cotizaciones y ejecuciones de v0.1. Haz un respaldo antes de actualizar. Los usuarios se crean después de migrar. Una cotización antigua aceptada no se considera ingreso hasta crear su pedido.
 
-## Código
-
-- server.py — servidor HTTP en Python, SQLite y agentes.
-- web/index.html — estructura visual del dashboard.
-- web/styles.css — diseño responsive.
-- web/app.js — interacciones y peticiones a la API.
-- tests/ — pruebas automatizadas.
-- data/ — datos locales (ignorados por Git).
-
-El MVP usa **JavaScript sin dependencias**, en lugar de React, para arrancar sin Node ni npm. Podemos migrar la interfaz a React/TypeScript cuando validemos su utilidad real.
-
-## Limitaciones y seguridad
-
-- **NO publicar el servidor en Internet ni abrir puertos en el router.** Escucha únicamente en 127.0.0.1 y no cuenta con login.
-- Tu primo puede usarlo por ahora en la misma computadora. Para entrar desde otro equipo o casa hará falta un servidor seguro, autenticación, sincronización y permisos.
-- No realiza scraping de negocios, prospección en Internet, envíos automáticos de WhatsApp ni publicaciones.
-- La prioridad calculada es una heurística de completitud de datos y etapa comercial; NO una probabilidad de cierre.
-- La utilidad estimada descuenta solo costo directo por tarjeta de cotizaciones aceptadas; excluye envío, comisiones, impuestos y otros gastos.
-- La división 50/50 mostrada es orientativa. Apliquen los acuerdos comerciales reales.
-- No subas datos privados de clientes, credenciales, tokens ni la base de datos a GitHub.
-
-## Colaboración
-
-- Tú: supervisión técnica, código, decisiones y pruebas.
-- Tu primo: operación comercial, pruebas y comentarios; no necesita saber programar.
-- El código se cambia mediante ramas y pull requests; los pendientes se documentan como Issues.
-
-## Próximas fases
-
-1. MVP local con prospectos, cotizaciones y tres agentes — implementado.
-2. Pruebas y ajuste del catálogo de precios y costos reales.
-3. Cuentas seguras para los dos y sincronización multiusuario.
-4. Investigación de negocios con fuentes públicas permitidas.
-5. Automatizaciones con aprobación humana y registro de auditoría.
-
-## Pruebas
-
-~~~powershell
-python -m unittest discover -s tests -v
-~~~
-
-Esta aplicación es una herramienta de apoyo. Toda acción de venta, cobro o envío debe ser aprobada por una persona.
+Consulta [operación y respaldos](docs/OPERATIONS.md), [despliegue](docs/DEPLOYMENT.md) y [limitaciones](docs/LIMITATIONS.md). Esta versión se valida como aplicación pequeña para dos usuarios; no se ha desplegado en producción ni sometido a una auditoría externa de seguridad.

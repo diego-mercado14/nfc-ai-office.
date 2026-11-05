@@ -20,8 +20,10 @@ jobs:
         with:
           python-version: '3.12'
       - name: Revisar sintaxis de Python
-        run: python -m compileall -q server.py tests
+        run: python -m compileall -q server.py domain.py security.py tests
       - name: Ejecutar pruebas del servidor y agentes
         run: python -m unittest discover -s tests -v
       - name: Revisar sintaxis JavaScript
-        run: node --check web/app.js
+        run: |
+          node --check web/app.js
+          node --check web/office.js
