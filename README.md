@@ -2,6 +2,12 @@
 
 Oficina compartida para un negocio de tarjetas NFC operado por dos socios. Python 3.10+, SQLite y JavaScript sin dependencias de ejecución. Interfaz oscura responsive en español mexicano. No requiere una API de pago.
 
+## Oficina virtual interactiva
+
+Después del inicio de sesión se abre una oficina isométrica en pixel art original. Selecciona a Coordinador, Prospección, Ventas o Finanzas para ejecutar sus herramientas y consultar resultados reales. Las vistas empresariales tradicionales siguen en el menú. No hay ejecuciones automáticas ni nuevos paquetes de frontend.
+
+Consulta [uso, arquitectura, capturas y pruebas de la oficina](docs/PIXEL_OFFICE.md).
+
 ## Instalar y arrancar
 
 ```sh
@@ -45,6 +51,7 @@ Ollama es opcional. Instálalo por su canal oficial y ejecuta `ollama pull qwen2
 python3 -m compileall -q server.py domain.py security.py tests
 python3 -m unittest discover -s tests -v
 node --check web/app.js
+node --check web/office.js
 ```
 
 Node solo se utiliza para comprobar sintaxis. Las pruebas crean bases temporales y servidores loopback. Para la prueba opcional de interfaz instala Playwright en un entorno de pruebas y Chromium; `python3 tests/browser_smoke.py` usa `/usr/bin/chromium` y genera capturas en `/tmp/nfc-office-ui`. Este recorrido comprueba login, CRM, notas, tareas, cotizaciones, pedidos, pagos, gastos, finanzas y logout en escritorio y móvil. No requiere datos reales.

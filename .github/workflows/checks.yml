@@ -24,4 +24,6 @@ jobs:
       - name: Ejecutar pruebas del servidor y agentes
         run: python -m unittest discover -s tests -v
       - name: Revisar sintaxis JavaScript
-        run: node --check web/app.js
+        run: |
+          node --check web/app.js
+          node --check web/office.js

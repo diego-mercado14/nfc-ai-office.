@@ -1,7 +1,8 @@
 "use strict";
 let state,
   session,
-  page = "dashboard";
+  page = "office";
+let disposeOffice = () => {};
 const root = document.getElementById("root");
 const dialog = document.getElementById("editor");
 const pesos = (n) =>
@@ -9,6 +10,7 @@ const pesos = (n) =>
     n / 100,
   );
 const names = {
+  office: "Oficina virtual",
   dashboard: "Visión general",
   crm: "Prospectos y clientes",
   tasks: "Seguimiento",
@@ -63,14 +65,35 @@ async function api(path, method = "GET", data) {
       session = null;
       state = null;
       dialog.close();
+      NFCOffice.reset();
       login();
     }
     throw Error(body.error || "No se pudo completar");
   }
   return body;
 }
+async function executeAgent(agent, prospect_id) {
+  const owner = session;
+  const result = await NFCOffice.execute(agent, prospect_id, () =>
+    api("agents/run", "POST", { agent, prospect_id }),
+  );
+  // Logout/session expiration invalidates pending UI updates; never reopen a previous user's view.
+  if (session !== owner) return result;
+  try {
+    await refresh();
+  } catch {
+    if (session === owner)
+      toast(
+        "Resultado recibido. No se pudo actualizar el historial; usa Actualizar.",
+      );
+  }
+  return result;
+}
 async function refresh() {
-  state = await api("state");
+  const owner = session;
+  const updated = await api("state");
+  if (!owner || session !== owner) return;
+  state = updated;
   render();
 }
 const businesses = () => state.prospects.map((p) => [p.id, p.business]);
@@ -141,6 +164,7 @@ function edit(title, fields, path, method = "POST", extra = {}) {
   dialog.showModal();
 }
 function login() {
+  disposeOffice();
   root.replaceChildren();
   const card = el("main", "login panel");
   card.append(el("p", "eyebrow", "NFC AI OFFICE · 1.0"));
@@ -152,6 +176,7 @@ function login() {
     ],
     async (data) => {
       session = await api("login", "POST", data);
+      page = "office";
       await refresh();
     },
   );
@@ -242,6 +267,8 @@ function prospectEdit(p) {
   );
 }
 function render() {
+  disposeOffice();
+  disposeOffice = () => {};
   root.replaceChildren();
   const shell = el("div", "shell"),
     side = el("aside", "sidebar");
@@ -273,11 +300,27 @@ function render() {
         await api("logout", "POST", {});
         session = null;
         state = null;
+        NFCOffice.reset();
         login();
       }),
     ),
   );
   const content = el("div", "content");
+  if (page === "office") {
+    main.append(bar, content);
+    shell.append(side, main);
+    root.append(shell);
+    disposeOffice = NFCOffice.mount(content, {
+      state,
+      executeAgent,
+      navigate: (target) => {
+        page = target;
+        render();
+      },
+    });
+    return;
+  }
+
   content.append(
     el("p", "eyebrow", "NFC AI OFFICE / 1.0"),
     el("h1", "", names[page]),
@@ -568,8 +611,7 @@ function render() {
         ],
       ],
       async (data) => {
-        await api("agents/run", "POST", data);
-        await refresh();
+        await executeAgent(data.agent, data.prospect_id);
       },
     );
     f.querySelector("button").textContent = "Generar análisis o borrador";
